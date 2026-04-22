@@ -1,12 +1,14 @@
 package com.ws101.EcommerceApi.controller;
 
-
 import com.ws101.EcommerceApi.model.Product;
 import com.ws101.EcommerceApi.service.ProductService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.util.List;
 
 /**
@@ -51,14 +53,12 @@ public class ProductController {
      * GET /api/v1/products/{id}
      * 
      * @param id the product ID extracted from URL path
-     * @return ResponseEntity with product (200 OK) or 404 Not Found
+     * @return ResponseEntity with product (200 OK)
+     * @throws com.ws101.ecommerceapi.exception.ProductNotFoundException if product not found (handled by global exception handler, returns 404)
      */
     @GetMapping("/{id}")
     public ResponseEntity<Product> getProductById(@PathVariable Long id) {
         Product product = productService.getProductById(id);
-        if (product == null) {
-            return ResponseEntity.notFound().build();
-        }
         return ResponseEntity.ok(product);
     }
     
@@ -70,6 +70,7 @@ public class ProductController {
      * @param filterType the criteria to filter by (category, price, name)
      * @param filterValue the value to filter by
      * @return ResponseEntity with filtered list and HTTP 200 OK
+     * @throws IllegalArgumentException if filterType is invalid or price format is wrong (handled by global exception handler, returns 400)
      */
     @GetMapping("/filter")
     public ResponseEntity<List<Product>> filterProducts(
@@ -85,16 +86,17 @@ public class ProductController {
             case "name":
                 filtered = productService.filterByName(filterValue);
                 break;
-            default:
-                // For price, expect format: min-max (e.g., "10-50")
-                if (filterType.equalsIgnoreCase("price")) {
-                    String[] range = filterValue.split("-");
-                    double min = Double.parseDouble(range[0]);
-                    double max = Double.parseDouble(range[1]);
-                    filtered = productService.filterByPrice(min, max);
-                } else {
-                    filtered = productService.getAllProducts();
+            case "price":
+                String[] range = filterValue.split("-");
+                if (range.length != 2) {
+                    throw new IllegalArgumentException("Price filter format must be 'min-max', e.g., '10-50'");
                 }
+                double min = Double.parseDouble(range[0].trim());
+                double max = Double.parseDouble(range[1].trim());
+                filtered = productService.filterByPrice(min, max);
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid filterType. Must be 'category', 'price', or 'name'");
         }
         
         return ResponseEntity.ok(filtered);
@@ -106,12 +108,19 @@ public class ProductController {
      * POST /api/v1/products
      * 
      * @param product the product data from request body (JSON)
-     * @return ResponseEntity with created product and HTTP 201 Created
+     * @return ResponseEntity with created product and HTTP 201 Created, includes Location header
      */
     @PostMapping
-    public ResponseEntity<Product> createProduct(@RequestBody Product product) {
+    public ResponseEntity<Product> createProduct(@Valid @RequestBody Product product) {
         Product created = productService.createProduct(product);
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        
+        URI location = ServletUriComponentsBuilder
+                .fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(created.getId())
+                .toUri();
+        
+        return ResponseEntity.created(location).body(created);
     }
     
     /**
@@ -121,16 +130,14 @@ public class ProductController {
      * 
      * @param id the product ID to update
      * @param product the new complete product data
-     * @return ResponseEntity with updated product (200 OK) or 404 Not Found
+     * @return ResponseEntity with updated product (200 OK)
+     * @throws com.ws101.ecommerceapi.exception.ProductNotFoundException if product not found (handled by global exception handler, returns 404)
      */
     @PutMapping("/{id}")
     public ResponseEntity<Product> updateProduct(
             @PathVariable Long id,
-            @RequestBody Product product) {
+            @Valid @RequestBody Product product) {
         Product updated = productService.updateProduct(id, product);
-        if (updated == null) {
-            return ResponseEntity.notFound().build();
-        }
         return ResponseEntity.ok(updated);
     }
     
@@ -141,16 +148,14 @@ public class ProductController {
      * 
      * @param id the product ID to patch
      * @param product partial product data
-     * @return ResponseEntity with patched product (200 OK) or 404 Not Found
+     * @return ResponseEntity with patched product (200 OK)
+     * @throws com.ws101.ecommerceapi.exception.ProductNotFoundException if product not found (handled by global exception handler, returns 404)
      */
     @PatchMapping("/{id}")
     public ResponseEntity<Product> patchProduct(
             @PathVariable Long id,
             @RequestBody Product product) {
         Product patched = productService.patchProduct(id, product);
-        if (patched == null) {
-            return ResponseEntity.notFound().build();
-        }
         return ResponseEntity.ok(patched);
     }
     
@@ -160,14 +165,12 @@ public class ProductController {
      * DELETE /api/v1/products/{id}
      * 
      * @param id the product ID to delete
-     * @return ResponseEntity with HTTP 204 No Content (success) or 404 Not Found
+     * @return ResponseEntity with HTTP 204 No Content (success)
+     * @throws com.ws101.ecommerceapi.exception.ProductNotFoundException if product not found (handled by global exception handler, returns 404)
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
-        boolean deleted = productService.deleteProduct(id);
-        if (!deleted) {
-            return ResponseEntity.notFound().build();
-        }
+        productService.deleteProduct(id);
         return ResponseEntity.noContent().build();
     }
 }
